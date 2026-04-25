@@ -1,0 +1,14 @@
+{
+  "name": "stremio-mix-addon",
+  "version": "1.5.0",
+  "private": true,
+  "description": "MiX 1.5 Stremio addon for curated Gram Cinema direct streams.",
+  "main": "index.js",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node index.js",
+    "check": "node --check index.js"
+  }
+}
