@@ -1,3 +1,5 @@
+const fs = require("fs");
+const path = require("path");
 const http = require("http");
 
 const PORT = Number(process.env.PORT || 7021);
@@ -13,25 +15,8 @@ const AUTH_TOKEN =
   "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJ1c2VySWQiOjIwMjI4LCJlbWFpbCI6ImFiZHVsbGFob21pcmEyN0BnbWFpbC5jb20iLCJleHAiOjE3Nzc3Mjg5OTMsImlhdCI6MTc3NzEyNDE5M30.ep7jCxXWcv_Z4rQHwP4pFGuKL1fKEPmeJxJviFYeZDs";
 const LINK_CACHE_TTL = 1000 * 60 * 60 * 8;
 const linkCache = new Map();
-const LOGO_SVG = `<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="MiX 1.5">
-  <defs>
-    <linearGradient id="mixBg" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#0f172a"/>
-      <stop offset="100%" stop-color="#111827"/>
-    </linearGradient>
-    <linearGradient id="mixAccent" x1="0%" y1="0%" x2="100%" y2="0%">
-      <stop offset="0%" stop-color="#f97316"/>
-      <stop offset="100%" stop-color="#ef4444"/>
-    </linearGradient>
-  </defs>
-  <rect width="512" height="512" rx="112" fill="url(#mixBg)"/>
-  <rect x="84" y="96" width="344" height="320" rx="56" fill="#0b1220" stroke="#1f2937" stroke-width="8"/>
-  <path d="M152 188h42l37 62 37-62h42v136h-36v-75l-30 50h-26l-30-50v75h-36V188z" fill="#f8fafc"/>
-  <path d="M337 188h37l29 43 29-43h37l-46 66 50 70h-38l-32-47-32 47h-38l50-70-46-66z" fill="url(#mixAccent)"/>
-  <rect x="124" y="350" width="264" height="14" rx="7" fill="#334155"/>
-  <text x="256" y="397" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="48" font-weight="700" fill="#e5e7eb">1.5</text>
-</svg>`;
+const ROOT_DIR = __dirname;
+const ICON_PATH = path.join(ROOT_DIR, "icon.jpg");
 
 const manifest = {
   id: "org.codex.mix",
@@ -72,6 +57,16 @@ function sendText(res, statusCode, body, contentType) {
   res.end(body);
 }
 
+function sendBinary(res, statusCode, body, contentType) {
+  res.writeHead(statusCode, {
+    "Content-Type": contentType,
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Headers": "*",
+    "Cache-Control": "public, max-age=3600",
+  });
+  res.end(body);
+}
+
 function getPublicBaseUrl(req) {
   const forwardedProto = req?.headers?.["x-forwarded-proto"];
   const forwardedHost = req?.headers?.["x-forwarded-host"];
@@ -87,7 +82,7 @@ function getPublicBaseUrl(req) {
 function buildManifest(baseUrl, sourceManifest) {
   return {
     ...sourceManifest,
-    logo: `${baseUrl}/logo.svg`,
+    logo: `${baseUrl}/logo.jpg`,
   };
 }
 
@@ -689,6 +684,7 @@ async function buildStreamsFromCandidates(candidates) {
         title: formatCandidateTitle(candidate.file),
         url,
         behaviorHints: {
+          videoSize: Number(candidate.file.file_size || 0) || undefined,
           bingeGroup: candidate.group || undefined,
         },
       });
@@ -783,8 +779,9 @@ const server = http.createServer(async (req, res) => {
       });
     }
 
-    if (pathname === "/logo.svg") {
-      return sendText(res, 200, LOGO_SVG, "image/svg+xml; charset=utf-8");
+    if (pathname === "/logo.jpg") {
+      const image = fs.readFileSync(ICON_PATH);
+      return sendBinary(res, 200, image, "image/jpeg");
     }
 
     if (pathname === "/manifest.json") {
