@@ -12,7 +12,7 @@ const TG_ARCHIVE_API = "https://tga-hd.api.hashhackers.com";
 const GRAMA_WEB_BASE = "https://bollywood.eu.org/#";
 const AUTH_TOKEN =
   process.env.GRAMA_BEARER_TOKEN ||
-  "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJ1c2VySWQiOjIwMjI4LCJlbWFpbCI6ImFiZHVsbGFob21pcmEyN0BnbWFpbC5jb20iLCJleHAiOjE3Nzc3Mjg5OTMsImlhdCI6MTc3NzEyNDE5M30.ep7jCxXWcv_Z4rQHwP4pFGuKL1fKEPmeJxJviFYeZDs";
+  "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJ1c2VySWQiOjIwMjI4LCJlbWFpbCI6ImFiZHVsbGFob21pcmEyN0BnbWFpbC5jb20iLCJleHAiOjE3Nzg3ODU0OTEsImlhdCI6MTc3ODE4MDY5MX0.Ykko9DWquuM9M03T4j-tDFnzxAn33CBqY_J7kK8ctFg";
 const LINK_CACHE_TTL = 1000 * 60 * 60 * 8;
 const linkCache = new Map();
 const ROOT_DIR = __dirname;
@@ -379,6 +379,59 @@ function makePrettySpacing(value) {
     .trim();
 }
 
+function getUrlFilename(value) {
+  try {
+    const pathname = new URL(String(value || "")).pathname;
+    return decodeURIComponent(pathname.split("/").pop() || "");
+  } catch {
+    return "";
+  }
+}
+
+function distinctiveFilenameTokens(value) {
+  const ignored = new Set([
+    "2160p",
+    "1080p",
+    "720p",
+    "576p",
+    "480p",
+    "360p",
+    "4k",
+    "uhd",
+    "hdr",
+    "10bit",
+    "12bit",
+    "hevc",
+    "x265",
+    "h265",
+    "x264",
+    "h264",
+    "web",
+    "dl",
+    "webdl",
+    "webrip",
+    "bluray",
+    "brrip",
+    "bdrip",
+    "amzn",
+    "mkv",
+    "mp4",
+  ]);
+  return tokenize(value).filter((token) => token.length > 2 && !ignored.has(token));
+}
+
+function generatedUrlMatchesCandidate(url, candidate) {
+  const sourceName = candidate.rawFilename || candidate.file_name || "";
+  const urlName = getUrlFilename(url);
+  const sourceTokens = distinctiveFilenameTokens(sourceName);
+  const urlTokens = new Set(distinctiveFilenameTokens(urlName));
+
+  if (!sourceTokens.length || !urlTokens.size) return true;
+
+  const matched = sourceTokens.filter((token) => urlTokens.has(token)).length;
+  return matched > 0 && matched / sourceTokens.length >= 0.35;
+}
+
 function containsTitlePhrase(filename, ctx) {
   const title = normalizeText(ctx.title || ctx.originalTitle);
   const normalizedFilename = normalizeText(filename);
@@ -677,6 +730,7 @@ async function buildStreamsFromCandidates(candidates) {
       const link = await generateLink(candidate.file.id);
       const url = link?.url;
       if (!link?.success || !url || usedUrls.has(url)) continue;
+      if (!generatedUrlMatchesCandidate(url, candidate.file)) continue;
       usedUrls.add(url);
 
       streams.push({
