@@ -811,12 +811,7 @@ async function getSeriesStreams(rawId) {
 
   const streams = await buildStreamsFromCandidates(curated);
   if (streams.length) return streams;
-  return [
-    buildWebFallbackStream(ctx, {
-      reason: `S${parsed.season}E${parsed.episode} • Direct links temporarily limited`,
-      bingeGroup: `series-${ctx.tmdbId}`,
-    }),
-  ];
+  return [];
 }
 
 const server = http.createServer(async (req, res) => {
