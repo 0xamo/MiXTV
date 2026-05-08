@@ -817,7 +817,7 @@ async function getSeriesStreams(rawId) {
   return [];
 }
 
-async function handleRequest(req, res) {
+const server = http.createServer(async (req, res) => {
   try {
     const reqUrl = new URL(req.url || "/", `http://${req.headers.host || "localhost"}`);
     const pathname = reqUrl.pathname;
@@ -861,6 +861,8 @@ async function handleRequest(req, res) {
     console.error("[Grama]", error);
     return sendJson(res, 200, { streams: [] });
   }
-}
+});
 
-module.exports = { handleRequest };
+server.listen(PORT, HOST, () => {
+  console.log(`MiX addon listening on http://${HOST}:${PORT}/manifest.json`);
+});
