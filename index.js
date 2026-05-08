@@ -783,7 +783,7 @@ async function getMovieStreams(rawId) {
 
   const streams = await buildStreamsFromCandidates(curated);
   if (streams.length) return streams;
-  return [];
+  return [buildWebFallbackStream(ctx, { reason: "Direct links temporarily limited" })];
 }
 
 async function getSeriesStreams(rawId) {
@@ -814,7 +814,12 @@ async function getSeriesStreams(rawId) {
 
   const streams = await buildStreamsFromCandidates(curated);
   if (streams.length) return streams;
-  return [];
+  return [
+    buildWebFallbackStream(ctx, {
+      reason: `S${parsed.season}E${parsed.episode} • Direct links temporarily limited`,
+      bingeGroup: `series-${ctx.tmdbId}`,
+    }),
+  ];
 }
 
 async function handleRequest(req, res) {
