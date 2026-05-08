@@ -12,7 +12,7 @@ const TG_ARCHIVE_API = "https://tga-hd.api.hashhackers.com";
 const GRAMA_WEB_BASE = "https://bollywood.eu.org/#";
 const AUTH_TOKEN =
   process.env.GRAMA_BEARER_TOKEN ||
-  "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJ1c2VySWQiOjIwMjI4LCJlbWFpbCI6ImFiZHVsbGFob21pcmEyN0BnbWFpbC5jb20iLCJleHAiOjE3Nzg3ODU0OTEsImlhdCI6MTc3ODE4MDY5MX0.Ykko9DWquuM9M03T4j-tDFnzxAn33CBqY_J7kK8ctFg";
+  "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJ1c2VySWQiOjIwMjI0LCJlbWFpbCI6ImEwMDV4ZXJvQGdtYWlsLmNvbSIsImV4cCI6MTc3ODg0NzgzMywiaWF0IjoxNzc4MjQzMDMzfQ.oAVNsBkdZzDDw-Sn-Mm6byNUjj3EyJOMSZ2ZOlcvNKI";
 const LINK_CACHE_TTL = 1000 * 60 * 60 * 8;
 const linkCache = new Map();
 const ROOT_DIR = __dirname;
@@ -780,7 +780,7 @@ async function getMovieStreams(rawId) {
 
   const streams = await buildStreamsFromCandidates(curated);
   if (streams.length) return streams;
-  return [buildWebFallbackStream(ctx, { reason: "Direct links temporarily limited" })];
+  return [];
 }
 
 async function getSeriesStreams(rawId) {
