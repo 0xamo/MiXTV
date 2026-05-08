@@ -86,8 +86,11 @@ function buildManifest(baseUrl, sourceManifest) {
   };
 }
 
+const PROXY_URL = process.env.PROXY_URL;
+
 async function fetchText(url, options = {}) {
-  const response = await fetch(url, {
+  const finalUrl = PROXY_URL ? `${PROXY_URL}${url}` : url;
+  const response = await fetch(finalUrl, {
     ...options,
     headers: {
       "user-agent": USER_AGENT,
