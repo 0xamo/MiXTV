@@ -20,8 +20,8 @@ const ICON_PATH = path.join(ROOT_DIR, "icon.jpg");
 
 const manifest = {
   id: "org.codex.mix",
-  version: "1.5.0",
-  name: "MiX 1.5",
+  version: "2.1.0",
+  name: "MixTV",
   description: "Curated Stremio direct streams from Gram Cinema with clean quality selection.",
   resources: ["stream"],
   types: ["movie", "series"],
