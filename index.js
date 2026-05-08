@@ -86,12 +86,15 @@ function buildManifest(baseUrl, sourceManifest) {
   };
 }
 
+const { HttpsProxyAgent } = require("https-proxy-agent");
+
 const PROXY_URL = process.env.PROXY_URL;
+const proxyAgent = PROXY_URL ? new HttpsProxyAgent(PROXY_URL) : null;
 
 async function fetchText(url, options = {}) {
-  const finalUrl = PROXY_URL ? `${PROXY_URL}${url}` : url;
-  const response = await fetch(finalUrl, {
+  const response = await fetch(url, {
     ...options,
+    agent: proxyAgent,
     headers: {
       "user-agent": USER_AGENT,
       accept: "application/json,text/plain,*/*",
