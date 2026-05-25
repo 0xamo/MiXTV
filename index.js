@@ -12,7 +12,7 @@ const TG_ARCHIVE_API = "https://tga-hd.api.hashhackers.com";
 const GRAMA_WEB_BASE = "https://bollywood.eu.org/#";
 const AUTH_TOKEN =
   process.env.GRAMA_BEARER_TOKEN ||
-  "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJ1c2VySWQiOjIwMjI0LCJlbWFpbCI6ImEwMDV4ZXJvQGdtYWlsLmNvbSIsImV4cCI6MTc3ODg0NzgzMywiaWF0IjoxNzc4MjQzMDMzfQ.oAVNsBkdZzDDw-Sn-Mm6byNUjj3EyJOMSZ2ZOlcvNKI";
+  "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJ1c2VySWQiOjIwMjE1LCJlbWFpbCI6ImEuMDAzLnhlcm9AZ21haWwuY29tIiwiZXhwIjoxNzgwMzA2ODg2LCJpYXQiOjE3Nzk3MDIwODZ9.qdTvpBieQwgl9mf6T8oYZaMWMqYg-5GAMLqAy0YM5Cg";
 const LINK_CACHE_TTL = 1000 * 60 * 60 * 8;
 const linkCache = new Map();
 const ROOT_DIR = __dirname;
