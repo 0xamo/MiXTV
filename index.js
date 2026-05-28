@@ -5,7 +5,7 @@ const http = require("http");
 const PORT = Number(process.env.PORT || 7021);
 const HOST = process.env.HOST || "0.0.0.0";
 const USER_AGENT =
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36";
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36";
 const TMDB_API_KEY =
   process.env.TMDB_API_KEY || "439c478a771f35c05022f9feabcca01c";
 const TG_ARCHIVE_API = "https://tga-hd.api.hashhackers.com";
@@ -20,7 +20,7 @@ const ICON_PATH = path.join(ROOT_DIR, "icon.jpg");
 
 const manifest = {
   id: "org.codex.mix",
-  version: "2.1.0",
+  version: "2.2.0",
   name: "MixTV",
   description: "Curated Stremio direct streams from Gram Cinema with clean quality selection.",
   resources: ["stream"],
@@ -37,7 +37,6 @@ const simpleManifest = {
   description: "Minimal Stremio test manifest for MixTV direct streams.",
 };
 
-// Smart title abbreviation function
 function abbreviateTitle(title, maxLength = 20) {
   if (!title) return "Movie";
   if (title.length <= maxLength) return title;
@@ -295,12 +294,21 @@ function buildSeriesQueries(ctx, season, episode) {
 }
 
 async function searchFiles(query, page = 1) {
-  return fetchJson(
-    `${TG_ARCHIVE_API}/files/search?q=${encodeURIComponent(query)}&page=${page}`,
-    {
-      headers: authHeaders(),
-    }
-  );
+  console.log(`[API] Searching: "${query}"`);
+  try {
+    // Updated endpoint from files/search to mix_media_files/search
+    const result = await fetchJson(
+      `${TG_ARCHIVE_API}/mix_media_files/search?q=${encodeURIComponent(query)}&page=${page}`,
+      {
+        headers: authHeaders(),
+      }
+    );
+    console.log(`[API] Found ${result?.files?.length || 0} files for "${query}"`);
+    return result;
+  } catch (error) {
+    console.error(`[API] Search failed for "${query}":`, error.message);
+    return { files: [] };
+  }
 }
 
 async function generateLink(fileId) {
@@ -309,19 +317,32 @@ async function generateLink(fileId) {
     return cached.payload;
   }
 
-  const payload = await fetchJson(
-    `${TG_ARCHIVE_API}/genLink?type=files&id=${encodeURIComponent(fileId)}`,
-    {
-      headers: authHeaders(),
+  console.log(`[API] Generating link for file ID: ${fileId}`);
+  
+  try {
+    // Updated endpoint: type=mix_media instead of type=files
+    const payload = await fetchJson(
+      `${TG_ARCHIVE_API}/genLink?type=mix_media&id=${encodeURIComponent(fileId)}`,
+      {
+        headers: authHeaders(),
+      }
+    );
+    
+    if (payload?.success && payload?.url) {
+      console.log(`[API] Successfully generated link for ${fileId}`);
+      linkCache.set(fileId, {
+        timestamp: Date.now(),
+        payload,
+      });
+      return payload;
+    } else {
+      console.error(`[API] Link generation returned:`, payload);
+      return null;
     }
-  );
-  if (payload?.success && payload?.url) {
-    linkCache.set(fileId, {
-      timestamp: Date.now(),
-      payload,
-    });
+  } catch (error) {
+    console.error(`[API] genLink failed for ${fileId}:`, error.message);
+    return null;
   }
-  return payload;
 }
 
 function isVideoFilename(filename) {
@@ -780,7 +801,7 @@ async function buildStreamsFromCandidates(candidates, ctx) {
         },
       });
     } catch (error) {
-      console.error(`[Grama] genLink failed for ${candidate.file.id}`, error.message);
+      console.error(`[Grama] Failed for ${candidate.file.id}:`, error.message);
     }
   }
 
