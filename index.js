@@ -33,8 +33,8 @@ const simpleManifest = {
   ...manifest,
   id: "org.codex.mix.simple",
   version: "1.5.0-simple",
-  name: "MiX Simple",
-  description: "Minimal Stremio test manifest for MiX direct streams.",
+  name: "MixTV Simple",
+  description: "Minimal Stremio test manifest for MixTV direct streams.",
 };
 
 function sendJson(res, statusCode, payload) {
@@ -80,10 +80,11 @@ function getPublicBaseUrl(req) {
 }
 
 function buildManifest(baseUrl, sourceManifest) {
-  return {
-    ...sourceManifest,
-    logo: `${baseUrl}/logo.jpg`,
-  };
+  const output = { ...sourceManifest };
+  if (fs.existsSync(ICON_PATH)) {
+    output.logo = `${baseUrl}/logo.jpg`;
+  }
+  return output;
 }
 
 async function fetchText(url, options = {}) {
@@ -242,12 +243,20 @@ function buildSeriesQueries(ctx, season, episode) {
 }
 
 async function searchFiles(query, page = 1) {
-  return fetchJson(
-    `${TG_ARCHIVE_API}/files/search?q=${encodeURIComponent(query)}&page=${page}`,
-    {
-      headers: authHeaders(),
-    }
-  );
+  console.log(`[API] Searching: "${query}"`);
+  try {
+    const result = await fetchJson(
+      `${TG_ARCHIVE_API}/files/search?q=${encodeURIComponent(query)}&page=${page}`,
+      {
+        headers: authHeaders(),
+      }
+    );
+    console.log(`[API] Found ${result?.files?.length || 0} files for "${query}"`);
+    return result;
+  } catch (error) {
+    console.error(`[API] Search failed for "${query}":`, error.message);
+    return { files: [] };
+  }
 }
 
 async function generateLink(fileId) {
@@ -390,32 +399,11 @@ function getUrlFilename(value) {
 
 function distinctiveFilenameTokens(value) {
   const ignored = new Set([
-    "2160p",
-    "1080p",
-    "720p",
-    "576p",
-    "480p",
-    "360p",
-    "4k",
-    "uhd",
-    "hdr",
-    "10bit",
-    "12bit",
-    "hevc",
-    "x265",
-    "h265",
-    "x264",
-    "h264",
-    "web",
-    "dl",
-    "webdl",
-    "webrip",
-    "bluray",
-    "brrip",
-    "bdrip",
-    "amzn",
-    "mkv",
-    "mp4",
+    "2160p", "1080p", "720p", "576p", "480p", "360p",
+    "4k", "uhd", "hdr", "10bit", "12bit",
+    "hevc", "x265", "h265", "x264", "h264",
+    "web", "dl", "webdl", "webrip",
+    "bluray", "brrip", "bdrip", "amzn", "mkv", "mp4",
   ]);
   return tokenize(value).filter((token) => token.length > 2 && !ignored.has(token));
 }
@@ -453,9 +441,7 @@ function titleCoverageScore(filename, ctx) {
 
 function hasForbiddenExtraMarkers(filename) {
   const value = normalizeText(filename);
-  return /\b(look back|behind the scenes|documentary|featurette|interview|extras|bonus)\b/.test(
-    value
-  );
+  return /\b(look back|behind the scenes|documentary|featurette|interview|extras|bonus)\b/.test(value);
 }
 
 function buildPrettyTitle(ctx, extra = {}) {
@@ -504,21 +490,18 @@ function formatCandidateTitle(candidate) {
 
 function formatCandidateName(candidate) {
   const meta = buildCandidateMetadata(candidate);
-  const parts = ["MiX"];
+  const parts = ["MixTV"];
   if (meta.qualityLabel && meta.qualityLabel !== "Auto") parts.push(meta.qualityLabel);
   return parts.join(" ");
 }
 
 function buildWebFallbackStream(ctx, extra = {}) {
-  const mediaPath =
-    ctx.mediaType === "movie"
-      ? `/movie/${ctx.tmdbId}`
-      : `/tv/${ctx.tmdbId}`;
+  const mediaPath = ctx.mediaType === "movie" ? `/movie/${ctx.tmdbId}` : `/tv/${ctx.tmdbId}`;
   const chosenTitle = ctx.title || ctx.originalTitle || "this title";
   const title = `Open ${chosenTitle} in Web`;
 
   return {
-    name: "MiX Web",
+    name: "MixTV Web",
     title,
     externalUrl: `${GRAMA_WEB_BASE}${mediaPath}`,
     behaviorHints: {
@@ -554,9 +537,7 @@ function seriesEpisodeScore(filename, season, episode) {
 
   if (new RegExp(`S${s}E${e}`, "i").test(value)) return 1;
   if (new RegExp(`\\b${season}x${episode}\\b`, "i").test(value)) return 0.9;
-  if (
-    new RegExp(`season[ ._-]?${season}.*episode[ ._-]?${episode}`, "i").test(value)
-  ) {
+  if (new RegExp(`season[ ._-]?${season}.*episode[ ._-]?${episode}`, "i").test(value)) {
     return 0.75;
   }
   return 0;
@@ -740,6 +721,14 @@ async function buildStreamsFromCandidates(candidates) {
         behaviorHints: {
           videoSize: Number(candidate.file.file_size || 0) || undefined,
           bingeGroup: candidate.group || undefined,
+          notWeb: true,
+          proxyHeaders: {
+            request: {
+              "User-Agent": USER_AGENT,
+              "Referer": "https://bollywood.eu.org/",
+              "Origin": "https://bollywood.eu.org",
+            },
+          },
         },
       });
     } catch (error) {
@@ -759,28 +748,48 @@ function toSimpleStreams(streams) {
 }
 
 async function getMovieStreams(rawId) {
-  const ctx = await resolveTmdbDetails(rawId, "movie");
-  const queries = buildMovieQueries(ctx);
-  const candidates = await collectCandidates(queries);
-  const ranked = candidates
-    .filter((file) => isMovieCandidateAllowed(file, ctx))
-    .map((file) => ({
-      file: {
-        ...file,
-        rawFilename: file.file_name,
-        file_name: buildPrettyTitle(ctx),
-      },
-      score: buildMovieScore(file, ctx),
-      group: `movie-${ctx.tmdbId}`,
-    }))
-    .sort((a, b) => b.score - a.score)
-    .map((item) => item);
-
-  const curated = curateCandidates(ranked);
-
-  const streams = await buildStreamsFromCandidates(curated);
-  if (streams.length) return streams;
-  return [];
+  console.log(`[DEBUG] Getting movie streams for: ${rawId}`);
+  
+  try {
+    const ctx = await resolveTmdbDetails(rawId, "movie");
+    console.log(`[DEBUG] TMDB Context:`, { title: ctx.title, year: ctx.year, tmdbId: ctx.tmdbId });
+    
+    const queries = buildMovieQueries(ctx);
+    console.log(`[DEBUG] Search queries:`, queries);
+    
+    const candidates = await collectCandidates(queries);
+    console.log(`[DEBUG] Found ${candidates.length} raw candidates`);
+    
+    const ranked = candidates
+      .filter((file) => isMovieCandidateAllowed(file, ctx))
+      .map((file) => ({
+        file: {
+          ...file,
+          rawFilename: file.file_name,
+          file_name: buildPrettyTitle(ctx),
+        },
+        score: buildMovieScore(file, ctx),
+        group: `movie-${ctx.tmdbId}`,
+      }))
+      .sort((a, b) => b.score - a.score);
+    
+    console.log(`[DEBUG] Ranked ${ranked.length} candidates after filtering`);
+    if (ranked.length > 0) {
+      console.log(`[DEBUG] Top candidate:`, ranked[0].file.file_name);
+    }
+    
+    const curated = curateCandidates(ranked);
+    console.log(`[DEBUG] Curated ${curated.length} candidates`);
+    
+    const streams = await buildStreamsFromCandidates(curated);
+    console.log(`[DEBUG] Built ${streams.length} streams`);
+    
+    if (streams.length) return streams;
+    return [];
+  } catch (error) {
+    console.error(`[DEBUG] getMovieStreams error:`, error.message);
+    return [];
+  }
 }
 
 async function getSeriesStreams(rawId) {
@@ -820,15 +829,20 @@ const server = http.createServer(async (req, res) => {
     const pathname = reqUrl.pathname;
 
     if (pathname === "/" || pathname === "/health") {
+      const baseUrl = getPublicBaseUrl(req);
       return sendJson(res, 200, {
         ok: true,
         addon: manifest.name,
+        manifest: `${baseUrl}/manifest.json`,
         tgArchiveApi: TG_ARCHIVE_API,
         linkCacheSize: linkCache.size,
       });
     }
 
     if (pathname === "/logo.jpg") {
+      if (!fs.existsSync(ICON_PATH)) {
+        return sendJson(res, 404, { error: "logo not found" });
+      }
       const image = fs.readFileSync(ICON_PATH);
       return sendBinary(res, 200, image, "image/jpeg");
     }
@@ -861,5 +875,6 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, HOST, () => {
-  console.log(`MiX addon listening on http://${HOST}:${PORT}/manifest.json`);
+  console.log(`\n${manifest.name} addon listening on http://${HOST}:${PORT}/manifest.json`);
+  console.log(`\nTest with: http://${HOST}:${PORT}/stream/movie/tt0111161.json`);
 });
