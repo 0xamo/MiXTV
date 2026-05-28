@@ -37,6 +37,58 @@ const simpleManifest = {
   description: "Minimal Stremio test manifest for MixTV direct streams.",
 };
 
+// Smart title abbreviation function
+function abbreviateTitle(title, maxLength = 20) {
+  if (!title) return "Movie";
+  if (title.length <= maxLength) return title;
+  
+  const abbreviations = {
+    'The Shawshank Redemption': 'Shawshank',
+    'The Godfather': 'Godfather',
+    'The Dark Knight': 'TDK',
+    'Pulp Fiction': 'Pulp Fiction',
+    'Schindler\'s List': 'Schindler',
+    'Forrest Gump': 'Forrest Gump',
+    'Fight Club': 'Fight Club',
+    'Inception': 'Inception',
+    'The Matrix': 'Matrix',
+    'Goodfellas': 'Goodfellas',
+    'Star Wars': 'Star Wars',
+    'The Lord of the Rings': 'LOTR',
+    'Harry Potter': 'HP',
+    'Jurassic Park': 'Jurassic Park',
+    'Titanic': 'Titanic',
+    'Avatar': 'Avatar',
+    'The Avengers': 'Avengers',
+    'Inglourious Basterds': 'Inglourious B.',
+    'Django Unchained': 'Django',
+    'The Wolf of Wall Street': 'Wolf of WS',
+    'The Silence of the Lambs': 'Silence Lambs',
+    'The Green Mile': 'Green Mile',
+    'Gladiator': 'Gladiator',
+    'Braveheart': 'Braveheart',
+    'The Departed': 'Departed',
+    'The Prestige': 'Prestige',
+    'Interstellar': 'Interstellar',
+    'The Social Network': 'Social Network',
+  };
+  
+  for (const [full, abbr] of Object.entries(abbreviations)) {
+    if (title.toLowerCase().includes(full.toLowerCase())) {
+      return abbr;
+    }
+  }
+  
+  if (title.length > maxLength) {
+    let words = title.split(' ').filter(w => w.length > 2);
+    if (words.length > 3) {
+      return words.slice(0, 3).join(' ') + '...';
+    }
+  }
+  
+  return title;
+}
+
 function sendJson(res, statusCode, payload) {
   res.writeHead(statusCode, {
     "Content-Type": "application/json; charset=utf-8",
@@ -243,20 +295,12 @@ function buildSeriesQueries(ctx, season, episode) {
 }
 
 async function searchFiles(query, page = 1) {
-  console.log(`[API] Searching: "${query}"`);
-  try {
-    const result = await fetchJson(
-      `${TG_ARCHIVE_API}/files/search?q=${encodeURIComponent(query)}&page=${page}`,
-      {
-        headers: authHeaders(),
-      }
-    );
-    console.log(`[API] Found ${result?.files?.length || 0} files for "${query}"`);
-    return result;
-  } catch (error) {
-    console.error(`[API] Search failed for "${query}":`, error.message);
-    return { files: [] };
-  }
+  return fetchJson(
+    `${TG_ARCHIVE_API}/files/search?q=${encodeURIComponent(query)}&page=${page}`,
+    {
+      headers: authHeaders(),
+    }
+  );
 }
 
 async function generateLink(fileId) {
@@ -445,7 +489,8 @@ function hasForbiddenExtraMarkers(filename) {
 }
 
 function buildPrettyTitle(ctx, extra = {}) {
-  const parts = [ctx.title, ctx.year || null];
+  const shortTitle = abbreviateTitle(ctx.title);
+  const parts = [shortTitle, ctx.year || null];
   if (ctx.mediaType === "series" && extra.season && extra.episode) {
     parts.push(formatEpisodeCode(extra.season, extra.episode));
   }
@@ -475,17 +520,17 @@ function buildCandidateMetadata(candidate) {
   };
 }
 
-function formatCandidateTitle(candidate) {
-  const meta = buildCandidateMetadata(candidate);
-  return [
-    candidate.file_name,
-    meta.qualityLabel !== "Auto" ? meta.qualityLabel : null,
-    meta.size,
-    meta.source,
-    meta.ext,
-  ]
-    .filter(Boolean)
-    .join(" ");
+function formatCandidateTitle(candidate, ctx, quality) {
+  const shortTitle = abbreviateTitle(ctx.title);
+  const year = ctx.year;
+  const size = formatBytes(candidate.file.file_size);
+  
+  const parts = [shortTitle];
+  if (year) parts.push(year);
+  if (quality) parts.push(`${quality}p`);
+  if (size) parts.push(size);
+  
+  return parts.filter(Boolean).join(" ");
 }
 
 function formatCandidateName(candidate) {
@@ -702,7 +747,7 @@ async function collectCandidates(queries) {
   return all;
 }
 
-async function buildStreamsFromCandidates(candidates) {
+async function buildStreamsFromCandidates(candidates, ctx) {
   const streams = [];
   const usedUrls = new Set();
 
@@ -713,10 +758,13 @@ async function buildStreamsFromCandidates(candidates) {
       if (!link?.success || !url || usedUrls.has(url)) continue;
       if (!generatedUrlMatchesCandidate(url, candidate.file)) continue;
       usedUrls.add(url);
+      
+      const quality = parseQuality(candidate.file.file_name);
+      const title = formatCandidateTitle(candidate, ctx, quality);
 
       streams.push({
         name: formatCandidateName(candidate.file),
-        title: formatCandidateTitle(candidate.file),
+        title: title,
         url,
         behaviorHints: {
           videoSize: Number(candidate.file.file_size || 0) || undefined,
@@ -748,48 +796,28 @@ function toSimpleStreams(streams) {
 }
 
 async function getMovieStreams(rawId) {
-  console.log(`[DEBUG] Getting movie streams for: ${rawId}`);
-  
-  try {
-    const ctx = await resolveTmdbDetails(rawId, "movie");
-    console.log(`[DEBUG] TMDB Context:`, { title: ctx.title, year: ctx.year, tmdbId: ctx.tmdbId });
-    
-    const queries = buildMovieQueries(ctx);
-    console.log(`[DEBUG] Search queries:`, queries);
-    
-    const candidates = await collectCandidates(queries);
-    console.log(`[DEBUG] Found ${candidates.length} raw candidates`);
-    
-    const ranked = candidates
-      .filter((file) => isMovieCandidateAllowed(file, ctx))
-      .map((file) => ({
-        file: {
-          ...file,
-          rawFilename: file.file_name,
-          file_name: buildPrettyTitle(ctx),
-        },
-        score: buildMovieScore(file, ctx),
-        group: `movie-${ctx.tmdbId}`,
-      }))
-      .sort((a, b) => b.score - a.score);
-    
-    console.log(`[DEBUG] Ranked ${ranked.length} candidates after filtering`);
-    if (ranked.length > 0) {
-      console.log(`[DEBUG] Top candidate:`, ranked[0].file.file_name);
-    }
-    
-    const curated = curateCandidates(ranked);
-    console.log(`[DEBUG] Curated ${curated.length} candidates`);
-    
-    const streams = await buildStreamsFromCandidates(curated);
-    console.log(`[DEBUG] Built ${streams.length} streams`);
-    
-    if (streams.length) return streams;
-    return [];
-  } catch (error) {
-    console.error(`[DEBUG] getMovieStreams error:`, error.message);
-    return [];
-  }
+  const ctx = await resolveTmdbDetails(rawId, "movie");
+  const queries = buildMovieQueries(ctx);
+  const candidates = await collectCandidates(queries);
+  const ranked = candidates
+    .filter((file) => isMovieCandidateAllowed(file, ctx))
+    .map((file) => ({
+      file: {
+        ...file,
+        rawFilename: file.file_name,
+        file_name: buildPrettyTitle(ctx),
+      },
+      score: buildMovieScore(file, ctx),
+      group: `movie-${ctx.tmdbId}`,
+    }))
+    .sort((a, b) => b.score - a.score)
+    .map((item) => item);
+
+  const curated = curateCandidates(ranked);
+
+  const streams = await buildStreamsFromCandidates(curated, ctx);
+  if (streams.length) return streams;
+  return [];
 }
 
 async function getSeriesStreams(rawId) {
@@ -818,7 +846,7 @@ async function getSeriesStreams(rawId) {
 
   const curated = curateCandidates(ranked);
 
-  const streams = await buildStreamsFromCandidates(curated);
+  const streams = await buildStreamsFromCandidates(curated, ctx);
   if (streams.length) return streams;
   return [];
 }
