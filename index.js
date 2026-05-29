@@ -296,7 +296,6 @@ function buildSeriesQueries(ctx, season, episode) {
 async function searchFiles(query, page = 1) {
   console.log(`[API] Searching: "${query}"`);
   try {
-    // Updated endpoint from files/search to mix_media_files/search
     const result = await fetchJson(
       `${TG_ARCHIVE_API}/mix_media_files/search?q=${encodeURIComponent(query)}&page=${page}`,
       {
@@ -320,7 +319,6 @@ async function generateLink(fileId) {
   console.log(`[API] Generating link for file ID: ${fileId}`);
   
   try {
-    // Updated endpoint: type=mix_media instead of type=files
     const payload = await fetchJson(
       `${TG_ARCHIVE_API}/genLink?type=mix_media&id=${encodeURIComponent(fileId)}`,
       {
@@ -786,7 +784,7 @@ async function buildStreamsFromCandidates(candidates, ctx) {
       streams.push({
         name: formatCandidateName(candidate.file),
         title: title,
-        url,
+        url: url,
         behaviorHints: {
           videoSize: Number(candidate.file.file_size || 0) || undefined,
           bingeGroup: candidate.group || undefined,
@@ -814,6 +812,97 @@ function toSimpleStreams(streams) {
     title: stream.title,
     url: stream.url,
   }));
+}
+
+// Proxy endpoint to handle video streaming
+async function handleProxy(req, res) {
+  const requestUrl = new URL(req.url, `http://${req.headers.host}`);
+  const encodedUrl = requestUrl.searchParams.get("url");
+  
+  if (!encodedUrl) {
+    res.writeHead(400);
+    res.end("Missing url parameter");
+    return;
+  }
+  
+  let targetUrl;
+  try {
+    targetUrl = Buffer.from(encodedUrl, 'base64').toString();
+    console.log(`[Proxy] Streaming request for: ${targetUrl.substring(0, 80)}...`);
+  } catch (e) {
+    res.writeHead(400);
+    res.end("Invalid URL encoding");
+    return;
+  }
+  
+  try {
+    const fetchOptions = {
+      method: "GET",
+      headers: {
+        "User-Agent": USER_AGENT,
+        "Accept": "*/*",
+        "Accept-Encoding": "identity",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Connection": "keep-alive",
+        "Referer": "https://bollywood.eu.org/",
+        "Origin": "https://bollywood.eu.org",
+      },
+    };
+    
+    if (req.headers.range) {
+      fetchOptions.headers["Range"] = req.headers.range;
+      console.log(`[Proxy] Range requested: ${req.headers.range}`);
+    }
+    
+    const response = await fetch(targetUrl, fetchOptions);
+    
+    if (!response.ok) {
+      console.error(`[Proxy] Upstream error: ${response.status}`);
+      res.writeHead(response.status, { "Content-Type": "text/plain" });
+      res.end(`Upstream error: ${response.status}`);
+      return;
+    }
+    
+    let contentType = response.headers.get("content-type") || "video/mp4";
+    if (targetUrl.includes('.mkv') || contentType.includes('octet-stream')) {
+      contentType = "video/x-matroska";
+    }
+    
+    const headers = {
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Headers": "*",
+      "Access-Control-Expose-Headers": "Content-Range, Accept-Ranges, Content-Length",
+      "Content-Type": contentType,
+      "Cache-Control": "no-cache",
+      "Accept-Ranges": "bytes",
+    };
+    
+    const contentLength = response.headers.get("content-length");
+    if (contentLength) headers["Content-Length"] = contentLength;
+    
+    const contentRange = response.headers.get("content-range");
+    if (contentRange) headers["Content-Range"] = contentRange;
+    
+    res.writeHead(response.status, headers);
+    
+    const reader = response.body.getReader();
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        res.write(value);
+      }
+    } finally {
+      reader.releaseLock();
+      res.end();
+    }
+  } catch (error) {
+    console.error(`[Proxy] Error:`, error.message);
+    if (!res.headersSent) {
+      res.writeHead(502, { "Content-Type": "text/plain" });
+      res.end(`Proxy error: ${error.message}`);
+    }
+  }
 }
 
 async function getMovieStreams(rawId) {
@@ -877,6 +966,11 @@ const server = http.createServer(async (req, res) => {
     const reqUrl = new URL(req.url || "/", `http://${req.headers.host || "localhost"}`);
     const pathname = reqUrl.pathname;
 
+    // Handle proxy endpoint
+    if (pathname === "/proxy") {
+      return handleProxy(req, res);
+    }
+
     if (pathname === "/" || pathname === "/health") {
       const baseUrl = getPublicBaseUrl(req);
       return sendJson(res, 200, {
@@ -926,4 +1020,5 @@ const server = http.createServer(async (req, res) => {
 server.listen(PORT, HOST, () => {
   console.log(`\n${manifest.name} addon listening on http://${HOST}:${PORT}/manifest.json`);
   console.log(`\nTest with: http://${HOST}:${PORT}/stream/movie/tt0111161.json`);
+  console.log(`\nAdd to Stremio: http://${HOST}:${PORT}/manifest.json`);
 });
